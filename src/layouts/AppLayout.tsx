@@ -7,6 +7,19 @@ import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
 import ResetPasswordModal from "./../components/ResetPassWordModal";
 
+function getRoleLabel(role: string | null | undefined) {
+  switch (role) {
+    case "STAFF":
+      return "Administrativo";
+    case "STUDENT":
+      return "Estudiante";
+    case "OPERATOR":
+      return "Operador";
+    default:
+      return role ?? "—";
+  }
+}
+
 export default function AppLayout() {
   const { role } = useAuth();
   const navigate = useNavigate();
@@ -26,8 +39,8 @@ export default function AppLayout() {
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm opacity-90">
-            <UserCircle2 className="w-5 h-5" />
-            {role}
+              <UserCircle2 className="w-5 h-5" />
+              {getRoleLabel(role)}
           </div>
 
           <Button

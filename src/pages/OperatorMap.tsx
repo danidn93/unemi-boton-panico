@@ -1,5 +1,10 @@
-// src/pages/OperatorMap.tsx
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  useMap,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
@@ -8,84 +13,115 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toast } from "sonner";
 
-// (Opcional) si ves iconos raros en Leaflet en Vite, normalmente hay que setear icon urls.
-// Si ya lo resolviste, puedes borrar este bloque.
+/* ================= ICONOS LEAFLET ================= */
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  shadowUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-type GeoJSONPoint = { type: "Point"; coordinates: [number, number] };
+/* ================= TIPOS ================= */
 
-type PanicAlertRow = {
-  id: string;
-  created_at: string | null;
-  created_by: string | null;
-  status: string | null;
-  target_department: string;
-  location: GeoJSONPoint;
-  accuracy_m: number | null;
-  device_info: any | null;
-  notes: string | null;
-  ack_by: string | null;
-  ack_at: string | null;
-  closed_by: string | null;
-  closed_at: string | null;
+type GeoJSONPoint = {
+  type: "Point";
+  coordinates: [number, number]; // [lng, lat]
 };
 
-function FitToSelected({ alert }: { alert: PanicAlertRow | null }) {
+type PanicAlertViewRow = {
+  id: string;
+  created_at: string | null;
+  status: string | null;
+  target_department: string | null;
+  accuracy_m: number | null;
+  notes: string | null;
+  ack_at: string | null;
+  created_by: string | null;
+
+  location_geojson: GeoJSONPoint | null;
+
+  full_name: string | null;
+  phone: string | null;
+  photo_path: string | null;
+};
+
+/* ================= HELPERS ================= */
+
+function formatDate(dt: string | null) {
+  if (!dt) return "—";
+  return new Date(dt).toLocaleString();
+}
+
+function getLatLng(
+  location: GeoJSONPoint | null | undefined
+): { lat: number; lng: number } | null {
+  if (
+    !location ||
+    location.type !== "Point" ||
+    !Array.isArray(location.coordinates) ||
+    location.coordinates.length !== 2
+  ) {
+    return null;
+  }
+  const [lng, lat] = location.coordinates;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  return { lat, lng };
+}
+
+function openDirections(lat: number, lng: number) {
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function openWhatsApp(phone: string) {
+  // Si tu phone está en formato 09..., conviértelo a internacional si lo requieres.
+  // Aquí lo dejo directo.
+  const clean = phone.replace(/[^\d]/g, "");
+  const url = `https://wa.me/${clean}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function FitToSelected({ alert }: { alert: PanicAlertViewRow | null }) {
   const map = useMap();
 
   useEffect(() => {
-    if (!alert?.location?.coordinates) return;
-    const [lng, lat] = alert.location.coordinates;
-    map.setView([lat, lng], Math.max(map.getZoom(), 18), { animate: true });
+    const pos = getLatLng(alert?.location_geojson ?? null);
+    if (!pos) return;
+    map.setView([pos.lat, pos.lng], Math.max(map.getZoom(), 18), {
+      animate: true,
+    });
   }, [alert, map]);
 
   return null;
 }
 
-function formatDate(dt: string | null) {
-  if (!dt) return "—";
-  const d = new Date(dt);
-  return d.toLocaleString();
-}
-
-function openDirections(lat: number, lng: number) {
-  // Google Maps: directions to destination
-  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-  window.open(url, "_blank", "noopener,noreferrer");
-}
+/* ================= COMPONENTE ================= */
 
 export default function OperatorMap() {
-  const [activeAlerts, setActiveAlerts] = useState<PanicAlertRow[]>([]);
-  const [selected, setSelected] = useState<PanicAlertRow | null>(null);
+  const [activeAlerts, setActiveAlerts] = useState<PanicAlertViewRow[]>([]);
+  const [selected, setSelected] = useState<PanicAlertViewRow | null>(null);
 
-  // Historial por cédula
+  // Historial por cédula (si lo mantienes)
   const [cedula, setCedula] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [history, setHistory] = useState<PanicAlertRow[]>([]);
+  const [history, setHistory] = useState<PanicAlertViewRow[]>([]);
   const [historyOwnerName, setHistoryOwnerName] = useState<string | null>(null);
 
-  // Comentarios / cierre
-  const [closing, setClosing] = useState(false);
-  const [comment, setComment] = useState("");
+  const channelRef = useRef<any>(null);
 
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-
-  const selectedLatLng = useMemo(() => {
-    if (!selected?.location?.coordinates) return null;
-    const [lng, lat] = selected.location.coordinates;
-    return { lat, lng };
+  const selectedPos = useMemo(() => {
+    return getLatLng(selected?.location_geojson ?? null);
   }, [selected]);
 
+  /* ===== CARGAR ACTIVAS ===== */
   const loadActive = async () => {
     const { data, error } = await supabase
-      .from("panic_alerts")
-      .select("*")
+      .from("panic_alerts_view")
+      .select(
+        "id, created_at, status, target_department, accuracy_m, notes, ack_at, created_by, location_geojson, full_name, phone, photo_path"
+      )
       .eq("status", "ACTIVE")
       .order("created_at", { ascending: false });
 
@@ -94,20 +130,18 @@ export default function OperatorMap() {
       return;
     }
 
-    const rows = (data || []) as PanicAlertRow[];
+    const rows = (data ?? []) as PanicAlertViewRow[];
     setActiveAlerts(rows);
 
-    // Si no hay seleccionado, selecciona el más reciente
-    if (!selected && rows.length) setSelected(rows[0]);
-    // Si el seleccionado ya no está activo, actualiza
-    if (selected && rows.length) {
+    // NO auto-seleccionar: el panel decide (como pediste)
+    // Si quieres que al menos conserve selección anterior:
+    if (selected) {
       const still = rows.find((r) => r.id === selected.id);
-      if (!still) setSelected(rows[0]);
-      else setSelected(still);
+      setSelected(still ?? null);
     }
   };
 
-  // Realtime: escuchar cambios en panic_alerts y refrescar activos
+  /* ===== REALTIME ===== */
   useEffect(() => {
     loadActive();
 
@@ -116,10 +150,7 @@ export default function OperatorMap() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "panic_alerts" },
-        () => {
-          // Refresca lista activa en cualquier cambio (insert/update/close)
-          loadActive();
-        }
+        () => loadActive()
       )
       .subscribe();
 
@@ -129,64 +160,7 @@ export default function OperatorMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const ackAlert = async (row: PanicAlertRow) => {
-    const { data: u } = await supabase.auth.getUser();
-    const myId = u.user?.id;
-    if (!myId) return toast.error("No se pudo identificar tu sesión.");
-
-    const { error } = await supabase
-      .from("panic_alerts")
-      .update({
-        ack_by: myId,
-        ack_at: new Date().toISOString(),
-      })
-      .eq("id", row.id);
-
-    if (error) return toast.error(error.message);
-    toast.success("Alerta confirmada (ack).");
-    await loadActive();
-  };
-
-  const closeAlert = async () => {
-    if (!selected) return;
-    const { data: u } = await supabase.auth.getUser();
-    const myId = u.user?.id;
-    if (!myId) return toast.error("No se pudo identificar tu sesión.");
-
-    setClosing(true);
-    try {
-      const newNote = comment.trim();
-
-      // Si ya había notes, concatena manteniendo historial
-      const mergedNotes =
-        newNote.length === 0
-          ? selected.notes
-          : (selected.notes ? `${selected.notes}\n\n` : "") +
-            `[${new Date().toLocaleString()}] ${newNote}`;
-
-      const { error } = await supabase
-        .from("panic_alerts")
-        .update({
-          status: "CLOSED",
-          closed_by: myId,
-          closed_at: new Date().toISOString(),
-          notes: mergedNotes ?? null,
-        })
-        .eq("id", selected.id);
-
-      if (error) throw error;
-
-      toast.success("Caso cerrado.");
-      setComment("");
-      setSelected(null);
-      await loadActive();
-    } catch (e: any) {
-      toast.error(e?.message ?? "No se pudo cerrar el caso");
-    } finally {
-      setClosing(false);
-    }
-  };
-
+  /* ===== HISTORIAL POR CÉDULA (opcional, igual que antes) ===== */
   const searchHistoryByCedula = async () => {
     const c = cedula.trim();
     if (!c) return toast.info("Ingresa una cédula.");
@@ -196,10 +170,9 @@ export default function OperatorMap() {
     setHistoryOwnerName(null);
 
     try {
-      // 1) Buscar profile por cédula
       const { data: prof, error: e1 } = await supabase
         .from("profiles")
-        .select("id, full_name, cedula")
+        .select("id, full_name")
         .eq("cedula", c)
         .maybeSingle();
 
@@ -211,17 +184,17 @@ export default function OperatorMap() {
 
       setHistoryOwnerName(prof.full_name ?? null);
 
-      // 2) Buscar alertas por created_by (historial completo)
       const { data: alerts, error: e2 } = await supabase
-        .from("panic_alerts")
-        .select("*")
+        .from("panic_alerts_view")
+        .select(
+          "id, created_at, status, target_department, accuracy_m, notes, ack_at, created_by, location_geojson, full_name, phone, photo_path"
+        )
         .eq("created_by", prof.id)
         .order("created_at", { ascending: false })
         .limit(200);
 
       if (e2) throw e2;
-
-      setHistory((alerts || []) as PanicAlertRow[]);
+      setHistory((alerts ?? []) as PanicAlertViewRow[]);
     } catch (e: any) {
       toast.error(e?.message ?? "No se pudo consultar el historial");
     } finally {
@@ -240,46 +213,37 @@ export default function OperatorMap() {
         >
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
+          {/* centra cuando eliges desde el panel */}
           <FitToSelected alert={selected} />
 
-          {/* Solo ACTIVE */}
+          {/* MARCAR TODAS LAS ACTIVAS */}
           {activeAlerts.map((a) => {
-            const [lng, lat] = a.location.coordinates;
+            const pos = getLatLng(a.location_geojson);
+            if (!pos) return null;
+
             const isSel = selected?.id === a.id;
 
             return (
               <Marker
                 key={a.id}
-                position={[lat, lng]}
+                position={[pos.lat, pos.lng]}
                 eventHandlers={{
                   click: () => setSelected(a),
                 }}
               >
                 <Popup>
-                  <div className="space-y-2">
+                  <div className="space-y-1 text-sm">
                     <div className="font-semibold">
-                      ALERTA {isSel ? "(seleccionada)" : ""}
+                      {a.full_name ?? "Usuario"} {isSel ? "(seleccionada)" : ""}
                     </div>
-                    <div className="text-sm">
-                      Creada: {formatDate(a.created_at)}
-                    </div>
-                    <div className="text-sm">
-                      Precisión: {a.accuracy_m ?? "—"} m
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        className="text-sm underline"
-                        onClick={() => openDirections(lat, lng)}
-                      >
-                        Cómo llegar
-                      </button>
-                      <button
-                        className="text-sm underline"
-                        onClick={() => setSelected(a)}
-                      >
-                        Ver panel
-                      </button>
-                    </div>
+                    <div>Fecha: {formatDate(a.created_at)}</div>
+                    <div>Dept: {a.target_department ?? "—"}</div>
+                    <button
+                      className="underline"
+                      onClick={() => openDirections(pos.lat, pos.lng)}
+                    >
+                      Cómo llegar
+                    </button>
                   </div>
                 </Popup>
               </Marker>
@@ -288,13 +252,12 @@ export default function OperatorMap() {
         </MapContainer>
       </div>
 
-      {/* ===== PANEL DERECHO (Alert + Historial) ===== */}
+      {/* ===== PANEL DERECHO ===== */}
       <aside className="w-[420px] max-w-[90vw] h-full border-l bg-white">
         <div className="h-full flex flex-col">
-          {/* Tabs simples */}
           <div className="px-4 py-3 border-b bg-slate-50">
             <div className="font-semibold text-slate-900">
-              Operador · Gestión de alertas
+              Operador · Alertas activas
             </div>
             <div className="text-xs text-slate-600">
               Activas: {activeAlerts.length}
@@ -302,115 +265,130 @@ export default function OperatorMap() {
           </div>
 
           <div className="flex-1 overflow-auto p-4 space-y-6">
-            {/* ===== ALERT PANEL ===== */}
+            {/* ===== LISTA DE ACTIVAS (SELECCIÓN AQUÍ) ===== */}
             <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold text-slate-900">Alerta activa</div>
-                {selected ? (
-                  <span className="text-xs px-2 py-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    {selected.status ?? "ACTIVE"}
-                  </span>
-                ) : (
-                  <span className="text-xs text-slate-500">Sin selección</span>
-                )}
+              <div className="font-semibold text-slate-900">
+                Alertas activas
               </div>
 
-              {!selected ? (
-                <div className="text-sm text-slate-600">
-                  Haz clic en un marcador para ver detalles.
+              {activeAlerts.length === 0 ? (
+                <div className="text-sm text-slate-500">
+                  No hay alertas activas por el momento.
                 </div>
               ) : (
-                <div className="space-y-3 rounded-lg border p-3">
-                  <div className="text-sm">
-                    <div className="text-xs text-slate-500">ID</div>
-                    <div className="font-mono text-xs break-all">
-                      {selected.id}
-                    </div>
-                  </div>
+                <div className="space-y-2">
+                  {activeAlerts.map((a) => {
+                    const isSel = selected?.id === a.id;
+                    return (
+                      <button
+                        key={a.id}
+                        onClick={() => setSelected(a)}
+                        className={`w-full text-left rounded-lg border p-3 hover:bg-slate-50 ${
+                          isSel ? "border-blue-600 bg-blue-50" : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={
+                              a.photo_path ??
+                              "https://ui-avatars.com/api/?name=Usuario"
+                            }
+                            className="w-10 h-10 rounded-full border object-cover"
+                            alt="foto"
+                          />
 
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <div className="text-xs text-slate-500">Creada</div>
-                      <div>{formatDate(selected.created_at)}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-slate-500">Precisión</div>
-                      <div>{selected.accuracy_m ?? "—"} m</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-slate-500">Departamento</div>
-                      <div>{selected.target_department}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-slate-500">Ack</div>
-                      <div>{selected.ack_at ? "Sí" : "No"}</div>
-                    </div>
-                  </div>
-
-                  {selectedLatLng && (
-                    <div className="text-sm">
-                      <div className="text-xs text-slate-500">Ubicación</div>
-                      <div className="font-mono text-xs">
-                        {selectedLatLng.lat.toFixed(6)},{" "}
-                        {selectedLatLng.lng.toFixed(6)}
-                      </div>
-                      <div className="mt-2 flex gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={() =>
-                            openDirections(selectedLatLng.lat, selectedLatLng.lng)
-                          }
-                        >
-                          Cómo llegar
-                        </Button>
-
-                        <Button
-                          variant="outline"
-                          onClick={() => ackAlert(selected)}
-                          disabled={!!selected.ack_at}
-                        >
-                          {selected.ack_at ? "Ack enviado" : "Confirmar (Ack)"}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <div className="text-xs font-medium text-slate-700">
-                      Comentario / Observación (notes)
-                    </div>
-                    <textarea
-                      value={comment}
-                      onChange={(e) => setComment(e.target.value)}
-                      rows={4}
-                      className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300"
-                      placeholder="Escribe el comentario para registrar en notes al cerrar el caso…"
-                    />
-
-                    <Button
-                      variant="destructive"
-                      onClick={closeAlert}
-                      disabled={closing}
-                    >
-                      {closing ? "Cerrando…" : "Cerrar caso"}
-                    </Button>
-
-                    {selected.notes && (
-                      <div className="pt-2 border-t">
-                        <div className="text-xs font-medium text-slate-700">
-                          Notes actuales
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-slate-900 truncate">
+                              {a.full_name ?? "Usuario"}
+                            </div>
+                            <div className="text-xs text-slate-600">
+                              {formatDate(a.created_at)}
+                            </div>
+                          </div>
                         </div>
-                        <pre className="mt-1 whitespace-pre-wrap text-xs text-slate-700 bg-slate-50 border rounded-md p-2">
-                          {selected.notes}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </section>
 
-            {/* ===== HISTORY PANEL ===== */}
+            {/* ===== DETALLE DE SELECCIÓN ===== */}
+            <section className="space-y-3">
+              <div className="font-semibold text-slate-900">
+                Detalle de alerta
+              </div>
+
+              {!selected ? (
+                <div className="text-sm text-slate-500">
+                  Selecciona una alerta desde la lista.
+                </div>
+              ) : (
+                <div className="rounded-lg border p-3 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={
+                        selected.photo_path ??
+                        "https://ui-avatars.com/api/?name=Usuario"
+                      }
+                      className="w-14 h-14 rounded-full border object-cover"
+                      alt="foto"
+                    />
+                    <div>
+                      <div className="font-semibold">
+                        {selected.full_name ?? "Usuario"}
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        {formatDate(selected.created_at)}
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        {selected.target_department ?? "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedPos ? (
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => openDirections(selectedPos.lat, selectedPos.lng)}
+                      >
+                        Google Maps · Cómo llegar
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                      Esta alerta no tiene ubicación en formato GeoJSON. Revisa que
+                      la VIEW esté devolviendo <code>location_geojson</code>.
+                    </div>
+                  )}
+
+                  {selected.phone ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <a href={`tel:${selected.phone}`}>
+                        <Button variant="outline" className="w-full">
+                          Llamar
+                        </Button>
+                      </a>
+
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => openWhatsApp(selected.phone!)}
+                      >
+                        WhatsApp
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500">
+                      Sin teléfono registrado.
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {/* ===== HISTORIAL POR CÉDULA (opcional) ===== */}
             <section className="space-y-3">
               <div className="font-semibold text-slate-900">
                 Historial por cédula
@@ -439,61 +417,25 @@ export default function OperatorMap() {
 
               {history.length === 0 ? (
                 <div className="text-sm text-slate-500">
-                  {historyLoading
-                    ? "Cargando historial…"
-                    : "Sin resultados aún."}
+                  {historyLoading ? "Cargando historial…" : "Sin resultados aún."}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {history.map((h) => {
-                    const [lng, lat] = h.location.coordinates;
-                    return (
-                      <div
-                        key={h.id}
-                        className="rounded-lg border p-3 hover:bg-slate-50"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm font-medium text-slate-900">
-                            {h.status ?? "—"}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {formatDate(h.created_at)}
-                          </div>
-                        </div>
-
-                        <div className="text-xs text-slate-600 mt-1">
-                          Dept: {h.target_department} · Precisión:{" "}
-                          {h.accuracy_m ?? "—"}m
-                        </div>
-
-                        <div className="mt-2 flex gap-2">
-                          <button
-                            className="text-xs underline"
-                            onClick={() => {
-                              // si está ACTIVE lo seleccionas desde la lista activa,
-                              // si no está activo igual puedes centrar con setSelected temporalmente
-                              setSelected(h);
-                            }}
-                          >
-                            Ver en mapa
-                          </button>
-
-                          <button
-                            className="text-xs underline"
-                            onClick={() => openDirections(lat, lng)}
-                          >
-                            Cómo llegar
-                          </button>
-                        </div>
-
-                        {h.notes && (
-                          <div className="mt-2 text-xs text-slate-700 whitespace-pre-wrap">
-                            {h.notes}
-                          </div>
-                        )}
+                  {history.map((h) => (
+                    <div key={h.id} className="rounded-lg border p-3">
+                      <div className="text-sm font-medium">
+                        {formatDate(h.created_at)} · {h.status ?? "—"}
                       </div>
-                    );
-                  })}
+                      <div className="text-xs text-slate-600">
+                        Dept: {h.target_department ?? "—"}
+                      </div>
+                      {h.notes && (
+                        <div className="mt-2 text-xs whitespace-pre-wrap">
+                          {h.notes}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </section>

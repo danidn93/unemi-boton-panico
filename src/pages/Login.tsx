@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useState } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, } from "react-router-dom";
 import {
   Mail,
   Lock,
@@ -8,7 +8,6 @@ import {
   EyeOff,
   LogIn,
   UserPlus,
-  ArrowLeft,
 } from "lucide-react";
 
 import { Button } from "./../components/ui/button";
@@ -35,9 +34,7 @@ import { useAuth } from "./../contexts/AuthContext";
 
 export default function Login() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { refreshRole, role } = useAuth();
-  const redirectTo = (location.state as { from?: string })?.from ?? "/";
+  const { refreshRole} = useAuth();
 
   const [tab, setTab] = useState<"login" | "register">("login");
 
