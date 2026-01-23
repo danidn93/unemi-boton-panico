@@ -10,6 +10,12 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+console.log("ENV CHECK", {
+  hasUrl: !!Deno.env.get("SUPABASE_URL"),
+  hasServiceKey: !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+  hasGmail: !!Deno.env.get("GMAIL_USER"),
+});
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
