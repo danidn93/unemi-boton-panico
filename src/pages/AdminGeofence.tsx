@@ -218,25 +218,53 @@ export default function AdminGeofence() {
       return;
     }
 
+    if (!staffEmail.toLowerCase().endsWith("@unemi.edu.ec")) {
+      toast.error("Debe usar correo institucional @unemi.edu.ec");
+      return;
+    }
+
+    if (staffRole === "OPERATOR" && !staffDepartment) {
+      toast.error("Seleccione el departamento del gestor");
+      return;
+    }
+
     try {
       setCreatingStaff(true);
 
-      // AQUÍ VA TU LÓGICA EXISTENTE
-      // supabase.auth.admin.createUser(...)
-      // insert en profiles
-      // envío de correo, etc.
+      const { data, error } = await supabase.functions.invoke(
+        "create-staff-and-send-email",
+        {
+          body: {
+            full_name: staffName,
+            institutional_email: staffEmail.toLowerCase(),
+            cedula: staffCedula,
+            phone: staffPhone || null,
+            address: staffAddress || null,
+            role: staffRole,
+            department:
+              staffRole === "OPERATOR" ? staffDepartment : null,
+            sede_id: selected?.id ?? null,
+            campus_id: null, // si luego lo usas
+          },
+        }
+      );
 
-      toast.success("Usuario Administrativo creado correctamente");
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.error ?? "Error desconocido");
 
-      // limpiar formulario
+      toast.success("Usuario creado y correo enviado");
+
+      // limpiar
       setStaffName("");
       setStaffEmail("");
       setStaffCedula("");
       setStaffPhone("");
       setStaffAddress("");
       setStaffRole("STAFF");
+      setStaffDepartment("");
+      setStaffModalOpen(false);
     } catch (err: any) {
-      toast.error(err?.message ?? "Error al crear usuario");
+      toast.error(err.message ?? "No se pudo crear el usuario");
     } finally {
       setCreatingStaff(false);
     }
