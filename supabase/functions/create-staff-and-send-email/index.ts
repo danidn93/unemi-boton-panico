@@ -3,9 +3,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { google } from "npm:googleapis@140";
 import { OAuth2Client } from "npm:google-auth-library@9";
 
-/* ===============================
-   CORS
-================================ */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -19,20 +16,19 @@ serve(async (req) => {
   }
 
   try {
-    /* ===============================
-       BODY
-    ================================ */
     const {
       full_name,
       institutional_email,
       cedula,
       phone,
       address,
-      role,        // STAFF | OPERATOR
-      department,  // BIENESTAR | SALUD_OCUPACIONAL | null
+      role,
+      department,
       campus_id,
       sede_id,
     } = await req.json();
+
+    /* ================= VALIDACIONES ================= */
 
     if (!full_name || !institutional_email || !cedula || !role) {
       return new Response(
@@ -48,9 +44,6 @@ serve(async (req) => {
       );
     }
 
-    /* ===============================
-       VALIDACIÓN DE ROLES
-    ================================ */
     if (!["STAFF", "OPERATOR"].includes(role)) {
       return new Response(
         JSON.stringify({ ok: false, error: "Rol inválido" }),
@@ -63,36 +56,23 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({
             ok: false,
-            error: "El operador debe tener un departamento válido",
+            error: "Operador requiere departamento válido",
           }),
           { status: 400, headers: corsHeaders }
         );
       }
     }
 
-    if (role === "STAFF" && department) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "STAFF no puede tener departamento",
-        }),
-        { status: 400, headers: corsHeaders }
-      );
-    }
+    /* ================= SUPABASE SERVICE ROLE ================= */
 
-    /* ===============================
-       SUPABASE (SERVICE ROLE)
-    ================================ */
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    /* ===============================
-       CREAR USUARIO AUTH
-       - password inicial = cédula
-    ================================ */
-    const { data: userData, error: authError } =
+    /* ================= CREAR USUARIO AUTH ================= */
+
+    const { data: authData, error: authError } =
       await supabase.auth.admin.createUser({
         email: institutional_email.toLowerCase(),
         password: cedula,
@@ -104,24 +84,30 @@ serve(async (req) => {
         },
       });
 
-    if (authError || !userData?.user) {
-      throw authError ?? new Error("No se pudo crear el usuario");
+    if (authError || !authData?.user) {
+      console.error("AUTH ERROR:", authError);
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: authError?.message ?? "Error creando usuario auth",
+        }),
+        { status: 400, headers: corsHeaders }
+      );
     }
 
-    const userId = userData.user.id;
+    const userId = authData.user.id;
 
-    /* ===============================
-       INSERT PROFILE
-    ================================ */
+    /* ================= INSERT PROFILE (FIX REAL) ================= */
+
     const { error: profileError } = await supabase
       .from("profiles")
       .insert({
         id: userId,
         full_name,
-        address: address ?? null,
-        phone: phone ?? null,
         institutional_email: institutional_email.toLowerCase(),
         cedula,
+        phone: phone?.trim() || "",
+        address: address?.trim() || "",
         photo_path: null,
         role,
         department: role === "OPERATOR" ? department : null,
@@ -132,11 +118,13 @@ serve(async (req) => {
         force_password_change: true,
       });
 
-    if (profileError) throw profileError;
+    if (profileError) {
+      console.error("PROFILE ERROR:", profileError);
+      throw profileError;
+    }
 
-    /* ===============================
-       CORREO
-    ================================ */
+    /* ================= CORREO GMAIL ================= */
+
     const origin =
       req.headers.get("origin") ||
       req.headers.get("referer") ||
@@ -159,21 +147,19 @@ serve(async (req) => {
     const html = `
       <h2>UNEMI · Acceso institucional</h2>
       <p>Hola <strong>${full_name}</strong>,</p>
-      <p>Tu cuenta ha sido creada con éxito.</p>
+      <p>Tu cuenta ha sido creada correctamente.</p>
       <ul>
         <li><strong>Usuario:</strong> ${institutional_email}</li>
-        <li><strong>Contraseña inicial:</strong> tu número de cédula</li>
+        <li><strong>Contraseña inicial:</strong> tu cédula</li>
       </ul>
       <p>Al iniciar sesión deberás cambiar tu contraseña.</p>
-      <p>
-        <a href="${loginUrl}" target="_blank">Iniciar sesión</a>
-      </p>
+      <p><a href="${loginUrl}">Iniciar sesión</a></p>
     `;
 
     const mime =
       `From: ${Deno.env.get("GMAIL_USER")}\r\n` +
       `To: ${institutional_email}\r\n` +
-      `Subject: Acceso al sistema App Emergencia UNEMI\r\n` +
+      `Subject: Acceso sistema Emergencias UNEMI\r\n` +
       `MIME-Version: 1.0\r\n` +
       `Content-Type: text/html; charset=UTF-8\r\n\r\n` +
       html;
@@ -193,7 +179,7 @@ serve(async (req) => {
       { headers: corsHeaders }
     );
   } catch (error: any) {
-    console.error("❌ create-staff:", error);
+    console.error("❌ create-staff-and-send-email:", error);
     return new Response(
       JSON.stringify({ ok: false, error: error.message }),
       { status: 500, headers: corsHeaders }
