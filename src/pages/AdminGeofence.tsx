@@ -136,8 +136,8 @@ export default function AdminGeofence() {
   const [staffRole, setStaffRole] = useState<"STAFF" | "OPERATOR">("STAFF");
   const [creatingStaff, setCreatingStaff] = useState(false);
   const [staffDepartment, setStaffDepartment] = useState<
-    "BIENESTAR" | "SALUD_OCUPACIONAL" | ""
-  >("");
+    "BIENESTAR" | "SALUD_OCUPACIONAL" | null
+  >(null);
 
   /* ===== CARGAR SEDES ===== */
   const loadSedes = async () => {
@@ -245,7 +245,9 @@ const createStaff = async () => {
 
           role: staffRole,
           department:
-            staffRole === "OPERATOR" ? staffDepartment : null,
+            staffRole === "OPERATOR" && staffDepartment
+              ? staffDepartment
+              : null,
 
           sede_id: selected?.id ?? null,
           campus_id: null,
@@ -264,7 +266,7 @@ const createStaff = async () => {
     setStaffPhone("");
     setStaffAddress("");
     setStaffRole("STAFF");
-    setStaffDepartment("");
+    setStaffDepartment(null);
     setStaffModalOpen(false);
   } catch (err: any) {
     toast.error(err.message ?? "No se pudo crear el usuario");
@@ -425,10 +427,12 @@ const createStaff = async () => {
             {staffRole === "OPERATOR" && (
               <select
                 className="w-full border rounded px-3 py-2 text-sm"
-                value={staffDepartment}
+                value={staffDepartment ?? ""}
                 onChange={(e) =>
                   setStaffDepartment(
-                    e.target.value as "BIENESTAR" | "SALUD_OCUPACIONAL"
+                    e.target.value
+                      ? (e.target.value as "BIENESTAR" | "SALUD_OCUPACIONAL")
+                      : null
                   )
                 }
               >
