@@ -212,63 +212,66 @@ export default function AdminGeofence() {
     loadSedes();
   };
 
-  const createStaff = async () => {
-    if (!staffName || !staffEmail || !staffCedula) {
-      toast.error("Completa los campos obligatorios");
-      return;
-    }
+const createStaff = async () => {
+  if (!staffName || !staffEmail || !staffCedula) {
+    toast.error("Completa los campos obligatorios");
+    return;
+  }
 
-    if (!staffEmail.toLowerCase().endsWith("@unemi.edu.ec")) {
-      toast.error("Debe usar correo institucional @unemi.edu.ec");
-      return;
-    }
+  if (!staffEmail.toLowerCase().endsWith("@unemi.edu.ec")) {
+    toast.error("Debe usar correo institucional @unemi.edu.ec");
+    return;
+  }
 
-    if (staffRole === "OPERATOR" && !staffDepartment) {
-      toast.error("Seleccione el departamento del gestor");
-      return;
-    }
+  if (staffRole === "OPERATOR" && !staffDepartment) {
+    toast.error("Seleccione el departamento del gestor");
+    return;
+  }
 
-    try {
-      setCreatingStaff(true);
+  try {
+    setCreatingStaff(true);
 
-      const { data, error } = await supabase.functions.invoke(
-        "create-staff-and-send-email",
-        {
-          body: {
-            full_name: staffName,
-            institutional_email: staffEmail.toLowerCase(),
-            cedula: staffCedula,
-            phone: staffPhone || null,
-            address: staffAddress || null,
-            role: staffRole,
-            department:
-              staffRole === "OPERATOR" ? staffDepartment : null,
-            sede_id: selected?.id ?? null,
-            campus_id: null, // si luego lo usas
-          },
-        }
-      );
+    const { data, error } = await supabase.functions.invoke(
+      "create-staff-and-send-email",
+      {
+        body: {
+          full_name: staffName.trim(),
+          institutional_email: staffEmail.trim().toLowerCase(),
+          cedula: staffCedula.trim(),
 
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error ?? "Error desconocido");
+          // ✅ AQUÍ ESTABA EL ERROR
+          phone: staffPhone?.trim() || "",
+          address: staffAddress?.trim() || "",
 
-      toast.success("Usuario creado y correo enviado");
+          role: staffRole,
+          department:
+            staffRole === "OPERATOR" ? staffDepartment : null,
 
-      // limpiar
-      setStaffName("");
-      setStaffEmail("");
-      setStaffCedula("");
-      setStaffPhone("");
-      setStaffAddress("");
-      setStaffRole("STAFF");
-      setStaffDepartment("");
-      setStaffModalOpen(false);
-    } catch (err: any) {
-      toast.error(err.message ?? "No se pudo crear el usuario");
-    } finally {
-      setCreatingStaff(false);
-    }
-  };
+          sede_id: selected?.id ?? null,
+          campus_id: null,
+        },
+      }
+    );
+
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.error ?? "Error desconocido");
+
+    toast.success("Usuario creado y correo enviado");
+
+    setStaffName("");
+    setStaffEmail("");
+    setStaffCedula("");
+    setStaffPhone("");
+    setStaffAddress("");
+    setStaffRole("STAFF");
+    setStaffDepartment("");
+    setStaffModalOpen(false);
+  } catch (err: any) {
+    toast.error(err.message ?? "No se pudo crear el usuario");
+  } finally {
+    setCreatingStaff(false);
+  }
+};
 
   return (
     <div className="h-full w-full flex">
