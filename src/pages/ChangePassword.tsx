@@ -184,7 +184,7 @@ export default function ChangePassword() {
                     <Button
                       type="submit"
                       disabled={!valid || saving}
-                      className="w-full bg-white text-slate-900 hover:bg-white/90"
+                      className="w-full bg-white text-black hover:bg-white/90"
                     >
                       {saving ? "Guardando…" : "Guardar contraseña"}
                     </Button>
