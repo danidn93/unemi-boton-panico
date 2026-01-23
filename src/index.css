@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --border: 214.3 31.8% 91.4%;
+  }
+}
+/* Fondo desktop */
+.login-bg {
+  background-image: url("/bg-admin.png");
+}
+
+/* Fondo móvil */
+@media (max-width: 640px) {
+  .login-bg {
+    background-image: url("/bg-mobile.png");
+  }
+}
+/* Scroll discreto */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+}
+/* Overlay de shadcn dialog */
+[data-radix-dialog-overlay] {
+  z-index: 9998 !important;
+}
+
+/* Contenido del modal */
+[data-radix-dialog-content] {
+  z-index: 9999 !important;
+}
