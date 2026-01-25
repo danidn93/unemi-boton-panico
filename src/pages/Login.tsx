@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, } from "react-router-dom";
 import {
   Mail,
@@ -44,11 +44,20 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false);
   const [loadingLogin, setLoadingLogin] = useState(false);
 
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [needsTerms, setNeedsTerms] = useState<boolean | null>(null);
+
   const onSubmitLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (loadingLogin) return;
     setLoadingLogin(true);
+
+    if (needsTerms && !termsAccepted) {
+      toast.error("Debes aceptar los Términos y Condiciones para continuar");
+      return;
+    }
 
     try {
       /* ================= LOGIN ================= */
@@ -87,6 +96,15 @@ export default function Login() {
 
       /* ================= ROL / CONTEXTO ================= */
       await refreshRole();
+      if (needsTerms && termsAccepted) {
+        await supabase
+          .from("profiles")
+          .update({
+            accepted_terms: true,
+            accepted_terms_at: new Date().toISOString(),
+          })
+          .eq("id", userId);
+      }
 
       navigate("/", { replace: true });
 
@@ -101,6 +119,26 @@ export default function Login() {
       setLoadingLogin(false);
     }
   };
+
+  useEffect(() => {
+    if (!email || !email.includes("@")) return;
+
+    const checkTerms = async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("accepted_terms")
+        .eq("institutional_email", email.toLowerCase())
+        .maybeSingle();
+
+      if (!data) {
+        setNeedsTerms(true); // usuario nuevo o sin perfil
+      } else {
+        setNeedsTerms(!data.accepted_terms);
+      }
+    };
+
+    checkTerms();
+  }, [email]);
 
   // ===================== REGISTRO (ESTUDIANTE) =====================
   const [stuName, setStuName] = useState("");
@@ -357,6 +395,26 @@ export default function Login() {
                         >
                           ¿Olvidaste tu contraseña?
                         </button>
+                        {needsTerms === true && (
+                          <div className="flex items-start gap-3 text-xs text-white/90">
+                            <input
+                              type="checkbox"
+                              checked={termsAccepted}
+                              onChange={(e) => setTermsAccepted(e.target.checked)}
+                              className="mt-0.5"
+                            />
+                            <span>
+                              Acepto los{" "}
+                              <button
+                                type="button"
+                                className="underline text-white"
+                                onClick={() => setShowTerms(true)}
+                              >
+                                Términos y Condiciones
+                              </button>
+                            </span>
+                          </div>
+                        )}
                         <Button type="submit" disabled={loadingLogin}>
                           <LogIn className="mr-2 h-4 w-4" />
                           {loadingLogin ? "Ingresando…" : "Ingresar"}
@@ -496,6 +554,75 @@ export default function Login() {
               <Button type="submit">Enviar enlace</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showTerms} onOpenChange={setShowTerms}>
+        <DialogContent className="safe-area sm:max-w-lg p-0">
+          {/* Contenedor interno con padding real */}
+          <div className="max-h-[80vh] overflow-y-auto px-5 py-4 sm:px-6 sm:py-5">
+
+            <DialogHeader className="space-y-1">
+              <DialogTitle className="text-lg font-semibold">
+                Términos y Condiciones de Uso
+              </DialogTitle>
+              <DialogDescription className="text-sm text-slate-600">
+                Reglamento de Régimen Disciplinario – UNEMI
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Contenido */}
+            <div className="mt-4 space-y-4 text-sm leading-relaxed text-slate-700">
+              <p>
+                El uso del sistema <strong>Botón Emergente UNEMI</strong> se rige por el
+                <strong>
+                  {" "}
+                  Reglamento de Régimen Disciplinario para los Estudiantes y Miembros
+                  del Personal Académico de la Universidad Estatal de Milagro
+                </strong>,
+                aprobado por el Órgano Colegiado Superior y vigente a la fecha.
+              </p>
+
+              <p>
+                El usuario se compromete a utilizar esta funcionalidad únicamente
+                ante situaciones reales de emergencia dentro de los predios
+                universitarios.
+              </p>
+
+              <p>
+                De conformidad con el Reglamento, el uso indebido de los sistemas
+                informáticos institucionales, la generación de alertas falsas o la
+                alteración de información constituye una falta disciplinaria y podrá
+                ser sancionada conforme a la normativa interna vigente.
+              </p>
+
+              <p>
+                Toda alerta registrada queda asociada al usuario autenticado y podrá
+                ser utilizada como evidencia en procesos administrativos o
+                disciplinarios, sin perjuicio de las acciones civiles o penales a las
+                que hubiere lugar.
+              </p>
+
+              <p>
+                La Universidad garantizará la confidencialidad de la información
+                tratada, conforme a la normativa institucional, evitando la
+                revictimización y el uso indebido de los datos.
+              </p>
+
+              <p className="pt-3 text-xs text-slate-500">
+                Referencia normativa: Reglamento de Régimen Disciplinario UNEMI,
+                primera versión 01-11-2022, última reforma 23-01-2025.
+              </p>
+            </div>
+            <div className="sticky bottom-0 mt-6 pt-4 bg-white">
+            <Button
+              type="button"
+              className="w-full"
+              onClick={() => setShowTerms(false)}
+            >
+              Cerrar
+            </Button>
+          </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

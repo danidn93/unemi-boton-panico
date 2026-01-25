@@ -32,6 +32,7 @@ export default function Home() {
   const [equipment, setEquipment] = useState<string[]>([]);
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [alertId, setAlertId] = useState<string | null>(null);
+  const [insideCampus, setInsideCampus] = useState<boolean | null>(null);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,6 +63,33 @@ export default function Home() {
     };
 
     fetchLastAlert();
+  }, [profile]);
+
+  useEffect(() => {
+    if (!profile) return;
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { data, error } = await supabase.rpc(
+          "validate_user_inside_campus",
+          {
+            p_lat: pos.coords.latitude,
+            p_lng: pos.coords.longitude,
+          }
+        );
+
+        if (error || !data?.inside_campus) {
+          setInsideCampus(false);
+          setUi("IDLE");
+        } else {
+          setInsideCampus(true);
+        }
+      },
+      () => {
+        setInsideCampus(false);
+      },
+      { enableHighAccuracy: true }
+    );
   }, [profile]);
 
   useEffect(() => {
@@ -161,8 +189,12 @@ export default function Home() {
           }
         );
 
-        if (error || !data?.ok) {
-          throw error;
+        if (error) throw error;
+
+        if (!data?.inside_campus) {
+          toast.error("No puedes enviar una alerta fuera de un campus UNEMI");
+          setUi("IDLE");
+          return;
         }
 
         setAlertId(data.alert_id);
@@ -179,9 +211,24 @@ export default function Home() {
       ? "bg-green-600"
       : "bg-red-600";
 
+  if (insideCampus === false) {
+    return (
+      <div className="h-full bg-gray-900 text-white flex items-center justify-center px-6 text-center safe-area">
+        <div className="max-w-sm space-y-3">
+          <p className="text-xl font-bold">
+            Acceso restringido
+          </p>
+          <p className="text-sm opacity-90 leading-relaxed">
+            Esta funcionalidad solo está disponible dentro de un campus UNEMI
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`h-full ${bgClass} text-white flex flex-col px-6 transition-colors duration-500`}
+      className={`h-full ${bgClass} text-white flex flex-col px-6 transition-colors duration-500 safe-area`}
     >
       {/* Alertas falsas (ARRIBA) */}
       <div className="w-full flex justify-center pt-safe mt-1">
@@ -206,7 +253,7 @@ export default function Home() {
         ) : (
           <button
             onClick={() => setOpenModal(true)}
-            disabled={ui !== "IDLE"}
+            disabled={ui !== "IDLE" || insideCampus !== true}
             className="w-56 h-56 rounded-full bg-white text-red-600 text-5xl font-extrabold shadow-2xl active:scale-95 transition"
           >
             {ui === "SENDING" ? "…" : "SOS"}
